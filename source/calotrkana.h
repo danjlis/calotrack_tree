@@ -31,6 +31,8 @@ class PHG4Hit;
 class PHG4CylinderCellGeom_Spacalv1;
 class PHG4CylinderGeom_Spacalv3;
 class SvtxEvalStack;
+class CaloEvalStack;
+class CaloRawTowerEval;
 class TDatabasePDG;
 class SvtxTrack;
 
@@ -98,6 +100,10 @@ private:
   float m_Hit_z[recomaxlength] = {0};
   float m_Hit_t[recomaxlength] = {0};
   int m_Hit_detid[recomaxlength] = {0};
+  int m_Hit_ieta[recomaxlength] = {0};
+  int m_Hit_iphi[recomaxlength] = {0};
+  int m_Hit_truth_track_id[recomaxlength] = {0};
+  int m_Hit_truth_pid[recomaxlength] = {0};
   int m_nHits = 0;
   // I'm seperating the traking clusters from the rest
   static const int trackrecoclustermaxlength = 5E6;
@@ -199,6 +205,12 @@ private:
       {tpotId, TrkrDefs::micromegasId}};
 
   SvtxEvalStack *m_svtxEvalStack = nullptr;
+  CaloEvalStack *m_cemcEvalStack = nullptr;
+  CaloEvalStack *m_ihcalEvalStack = nullptr;
+  CaloEvalStack *m_ohcalEvalStack = nullptr;
+  CaloRawTowerEval *m_cemcTowerEval = nullptr;
+  CaloRawTowerEval *m_ihcalTowerEval = nullptr;
+  CaloRawTowerEval *m_ohcalTowerEval = nullptr;
 
   TDatabasePDG *_pdg = nullptr;
   std::string Outfile;

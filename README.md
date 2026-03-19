@@ -26,9 +26,18 @@ T->Branch("Hit_y", &m_Hit_y, "Hit_y[nHits]/F");
 T->Branch("Hit_z", &m_Hit_z, "Hit_z[nHits]/F");
 T->Branch("Hit_t", &m_Hit_t, "Hit_t[nHits]/F"); // Time of the hit [ns]
 T->Branch("Hit_detid", &m_Hit_detid, "Hit_detid[nHits]/I"); // Detector ID
+T->Branch("Hit_ieta", &m_Hit_ieta, "Hit_ieta[nHits]/I"); // Tower eta bin (-1 for non-tower detectors)
+T->Branch("Hit_iphi", &m_Hit_iphi, "Hit_iphi[nHits]/I"); // Tower phi bin (-1 for non-tower detectors)
+T->Branch("Hit_truth_track_id", &m_Hit_truth_track_id, "Hit_truth_track_id[nHits]/I"); // Best matched truth primary track id for calorimeter towers
+T->Branch("Hit_truth_pid", &m_Hit_truth_pid, "Hit_truth_pid[nHits]/I"); // PID of the best matched truth primary particle
 ```
 
 Hits for the calorimeters (CEMC, Inner HCal, Outer HCal, sEPD) are represented by the `TowerInfo` object. Hits for the MBD are represented by the `MbdPmtHit` object.
+
+For calorimeter truth matching:
+- `Hit_truth_track_id` and `Hit_truth_pid` are filled for CEMC/IHCAL/OHCAL using `CaloRawTowerEval::max_truth_primary_particle_by_energy`.
+- For EPD and MBD, truth matching is not applied, so these fields are set to `0`.
+- For CEMC/IHCAL/OHCAL, a value of `0` means no matched truth primary particle was found.
 
 ### Detector ID Definition
 

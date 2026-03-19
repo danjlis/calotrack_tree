@@ -18,9 +18,8 @@
 
 #include <phool/PHCompositeNode.h>
 
-#include <g4detectors/PHG4TpcCylinderGeomContainer.h>
-#include <g4detectors/PHG4TpcCylinderGeom.h>
-#include <g4detectors/PHG4TpcCylinderGeomContainer.h>
+#include <g4detectors/PHG4TpcGeomContainer.h>
+#include <g4detectors/PHG4TpcGeom.h>
 
 #include <g4main/PHG4Hit.h>
 #include <g4main/PHG4HitContainer.h>
@@ -98,6 +97,8 @@
 #include <trackbase_historic/TrackAnalysisUtils.h>
 
 #include <g4eval/SvtxEvalStack.h>
+#include <g4eval/CaloEvalStack.h>
+#include <g4eval/CaloRawTowerEval.h>
 
 //____________________________________________________________________________..
 calotrkana::calotrkana(const std::string &name = "calotrkana",
@@ -146,6 +147,10 @@ int calotrkana::Init(PHCompositeNode *topNode)
   T->Branch("Hit_z", &m_Hit_z, "Hit_z[nHits]/F");
   T->Branch("Hit_t", &m_Hit_t, "Hit_t[nHits]/F");
   T->Branch("Hit_detid", &m_Hit_detid, "Hit_detid[nHits]/I");
+  T->Branch("Hit_ieta", &m_Hit_ieta, "Hit_ieta[nHits]/I");
+  T->Branch("Hit_iphi", &m_Hit_iphi, "Hit_iphi[nHits]/I");
+  T->Branch("Hit_truth_track_id", &m_Hit_truth_track_id, "Hit_truth_track_id[nHits]/I");
+  T->Branch("Hit_truth_pid", &m_Hit_truth_pid, "Hit_truth_pid[nHits]/I");
   T->Branch("nParticles", &m_nParticles, "nParticles/I");
   T->Branch("particle_pid", &m_particle_pid, "particle_pid[nParticles]/I");
   T->Branch("particle_energy", &m_particle_energy, "particle_energy[nParticles]/F");
@@ -353,6 +358,25 @@ int calotrkana::process_event(PHCompositeNode *topNode)
   }
 //std::cout<<"calo:"<<std::endl;
  if(!m_tracking_only) {
+  if (!m_cemcEvalStack)
+  {
+    m_cemcEvalStack = new CaloEvalStack(topNode, "CEMC");
+    m_cemcTowerEval = m_cemcEvalStack->get_rawtower_eval();
+  }
+  if (!m_ihcalEvalStack)
+  {
+    m_ihcalEvalStack = new CaloEvalStack(topNode, "HCALIN");
+    m_ihcalTowerEval = m_ihcalEvalStack->get_rawtower_eval();
+  }
+  if (!m_ohcalEvalStack)
+  {
+    m_ohcalEvalStack = new CaloEvalStack(topNode, "HCALOUT");
+    m_ohcalTowerEval = m_ohcalEvalStack->get_rawtower_eval();
+  }
+  if (m_cemcEvalStack) m_cemcEvalStack->next_event(topNode);
+  if (m_ihcalEvalStack) m_ihcalEvalStack->next_event(topNode);
+  if (m_ohcalEvalStack) m_ohcalEvalStack->next_event(topNode);
+
   // CEMC
   TowerInfoContainer *CEMC_towers_sim =
       findNode::getClass<TowerInfoContainer>(topNode, "TOWERINFO_CALIB_CEMC");
@@ -379,13 +403,28 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     float tower_x = CEMC_geom->get_tower_geometry(key)->get_center_x();
     float tower_y = CEMC_geom->get_tower_geometry(key)->get_center_y();
     float tower_z = CEMC_geom->get_tower_geometry(key)->get_center_z();
+    int truth_track_id = 0;
+    int truth_pid = 0;
+    if (m_cemcTowerEval)
+    {
+      PHG4Particle *maxPrimary = m_cemcTowerEval->max_truth_primary_particle_by_energy(tower);
+      if (maxPrimary)
+      {
+        truth_track_id = maxPrimary->get_track_id();
+        truth_pid = maxPrimary->get_pid();
+      }
+    }
 
     m_Hit_E[m_nHits] = tower->get_energy();
     m_Hit_x[m_nHits] = tower_x;
     m_Hit_y[m_nHits] = tower_y;
     m_Hit_z[m_nHits] = tower_z;
-    m_Hit_t[m_nHits] = tower->get_time_float() * sampletons;
+    m_Hit_t[m_nHits] = tower->get_time() * sampletons;
     m_Hit_detid[m_nHits] = static_cast<int>(calotrkana::cemcId);
+    m_Hit_ieta[m_nHits] = ieta;
+    m_Hit_iphi[m_nHits] = iphi;
+    m_Hit_truth_track_id[m_nHits] = truth_track_id;
+    m_Hit_truth_pid[m_nHits] = truth_pid;
     m_nHits++;
 
     if (m_nHits >= recomaxlength)
@@ -416,13 +455,28 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     float tower_x = IHCAL_geom->get_tower_geometry(key)->get_center_x();
     float tower_y = IHCAL_geom->get_tower_geometry(key)->get_center_y();
     float tower_z = IHCAL_geom->get_tower_geometry(key)->get_center_z();
+    int truth_track_id = 0;
+    int truth_pid = 0;
+    if (m_ihcalTowerEval)
+    {
+      PHG4Particle *maxPrimary = m_ihcalTowerEval->max_truth_primary_particle_by_energy(tower);
+      if (maxPrimary)
+      {
+        truth_track_id = maxPrimary->get_track_id();
+        truth_pid = maxPrimary->get_pid();
+      }
+    }
 
     m_Hit_E[m_nHits] = tower->get_energy();
     m_Hit_x[m_nHits] = tower_x;
     m_Hit_y[m_nHits] = tower_y;
     m_Hit_z[m_nHits] = tower_z;
-    m_Hit_t[m_nHits] = tower->get_time_float() * sampletons;
+    m_Hit_t[m_nHits] = tower->get_time() * sampletons;
     m_Hit_detid[m_nHits] = static_cast<int>(calotrkana::ihcalId);
+    m_Hit_ieta[m_nHits] = ieta;
+    m_Hit_iphi[m_nHits] = iphi;
+    m_Hit_truth_track_id[m_nHits] = truth_track_id;
+    m_Hit_truth_pid[m_nHits] = truth_pid;
     m_nHits++;
 
     if (m_nHits >= recomaxlength)
@@ -458,13 +512,28 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     float tower_x = OHCAL_geom->get_tower_geometry(key)->get_center_x();
     float tower_y = OHCAL_geom->get_tower_geometry(key)->get_center_y();
     float tower_z = OHCAL_geom->get_tower_geometry(key)->get_center_z();
+    int truth_track_id = 0;
+    int truth_pid = 0;
+    if (m_ohcalTowerEval)
+    {
+      PHG4Particle *maxPrimary = m_ohcalTowerEval->max_truth_primary_particle_by_energy(tower);
+      if (maxPrimary)
+      {
+        truth_track_id = maxPrimary->get_track_id();
+        truth_pid = maxPrimary->get_pid();
+      }
+    }
 
     m_Hit_E[m_nHits] = tower->get_energy();
     m_Hit_x[m_nHits] = tower_x;
     m_Hit_y[m_nHits] = tower_y;
     m_Hit_z[m_nHits] = tower_z;
-    m_Hit_t[m_nHits] = tower->get_time_float() * sampletons;
+    m_Hit_t[m_nHits] = tower->get_time() * sampletons;
     m_Hit_detid[m_nHits] = static_cast<int>(calotrkana::ohcalId);
+    m_Hit_ieta[m_nHits] = ieta;
+    m_Hit_iphi[m_nHits] = iphi;
+    m_Hit_truth_track_id[m_nHits] = truth_track_id;
+    m_Hit_truth_pid[m_nHits] = truth_pid;
     m_nHits++;
 
     if (m_nHits >= recomaxlength)
@@ -506,6 +575,10 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     m_Hit_z[m_nHits] = z;
     m_Hit_t[m_nHits] = tower->get_time();
     m_Hit_detid[m_nHits] = static_cast<int>(calotrkana::epdId);
+    m_Hit_ieta[m_nHits] = -1;
+    m_Hit_iphi[m_nHits] = -1;
+    m_Hit_truth_track_id[m_nHits] = 0;
+    m_Hit_truth_pid[m_nHits] = 0;
     m_nHits++;
 
     if (m_nHits >= recomaxlength)
@@ -540,6 +613,10 @@ int calotrkana::process_event(PHCompositeNode *topNode)
       m_Hit_z[m_nHits] = z;
       m_Hit_t[m_nHits] = mbdt;
       m_Hit_detid[m_nHits] = static_cast<int>(calotrkana::mbdId);
+      m_Hit_ieta[m_nHits] = -1;
+      m_Hit_iphi[m_nHits] = -1;
+      m_Hit_truth_track_id[m_nHits] = 0;
+      m_Hit_truth_pid[m_nHits] = 0;
       m_nHits++;
 
       if (m_nHits >= recomaxlength)
@@ -779,7 +856,7 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     std::cout << "calotrkana::process_event(PHCompositeNode *topNode) No SvtxTrackMap found" << std::endl;
     return Fun4AllReturnCodes::ABORTEVENT;
   }
-  auto *tpcGeo = findNode::getClass<PHG4TpcCylinderGeomContainer>(topNode, "CYLINDERCELLGEOM_SVTX");
+  auto *tpcGeo = findNode::getClass<PHG4TpcGeomContainer>(topNode, "TPCGEOMCONTAINER");
   if (!tpcGeo)
   {
     std::cout << "calotrkana::process_event(PHCompositeNode *topNode) No TPC geometry found" << std::endl;
@@ -1032,6 +1109,15 @@ int calotrkana::ResetEvent(PHCompositeNode *topNode)
 //____________________________________________________________________________..
 int calotrkana::End(PHCompositeNode *topNode)
 {
+  delete m_cemcEvalStack;
+  m_cemcEvalStack = nullptr;
+  m_cemcTowerEval = nullptr;
+  delete m_ihcalEvalStack;
+  m_ihcalEvalStack = nullptr;
+  m_ihcalTowerEval = nullptr;
+  delete m_ohcalEvalStack;
+  m_ohcalEvalStack = nullptr;
+  m_ohcalTowerEval = nullptr;
   out->cd();
 
   // T->Write();
