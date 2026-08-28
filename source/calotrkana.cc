@@ -68,6 +68,14 @@
 #include <calobase/RawTowerGeomContainer.h>
 #include <calobase/RawTowerGeomContainer_Cylinderv1.h>
 
+#include <jetbase/Jet.h>
+#include <jetbase/JetContainer.h>
+
+#include <TAxis.h>
+#include <TH2D.h>
+#include <TMath.h>
+#include <TString.h>
+
 #include <globalvertex/GlobalVertex.h>
 #include <globalvertex/GlobalVertexMap.h>
 
@@ -211,6 +219,71 @@ int calotrkana::Init(PHCompositeNode *topNode)
   T->Branch("tpc_seeds_maxparticle_pid", &m_tpc_seeds_maxparticle_pid, "tpc_seeds_maxparticle_pid[nTPCSeeds]/I");
   T->Branch("tpc_seeds_maxparticle_p", &m_tpc_seeds_maxparticle_p, "tpc_seeds_maxparticle_p[nTPCSeeds]/F");
   T->Branch("tpc_seeds_clusters", &m_tpc_seeds_clusters, "tpc_seeds_clusters[nTPCSeedsClusters]/l");
+
+  // reconstructed (fitted) tracks
+  T->Branch("nTracks", &m_nTracks, "nTracks/I");
+  T->Branch("track_id", &m_track_id, "track_id[nTracks]/i");
+  T->Branch("track_vtxid", &m_track_vtxid, "track_vtxid[nTracks]/i");
+  T->Branch("track_charge", &m_track_charge, "track_charge[nTracks]/I");
+  T->Branch("track_x", &m_track_x, "track_x[nTracks]/F");
+  T->Branch("track_y", &m_track_y, "track_y[nTracks]/F");
+  T->Branch("track_z", &m_track_z, "track_z[nTracks]/F");
+  T->Branch("track_px", &m_track_px, "track_px[nTracks]/F");
+  T->Branch("track_py", &m_track_py, "track_py[nTracks]/F");
+  T->Branch("track_pz", &m_track_pz, "track_pz[nTracks]/F");
+  T->Branch("track_pt", &m_track_pt, "track_pt[nTracks]/F");
+  T->Branch("track_eta", &m_track_eta, "track_eta[nTracks]/F");
+  T->Branch("track_phi", &m_track_phi, "track_phi[nTracks]/F");
+  T->Branch("track_chisq", &m_track_chisq, "track_chisq[nTracks]/F");
+  T->Branch("track_ndf", &m_track_ndf, "track_ndf[nTracks]/I");
+  T->Branch("track_quality", &m_track_quality, "track_quality[nTracks]/F");
+  T->Branch("track_crossing", &m_track_crossing, "track_crossing[nTracks]/I");
+  T->Branch("track_nmvtxhits", &m_track_nmvtxhits, "track_nmvtxhits[nTracks]/I");
+  T->Branch("track_nintthits", &m_track_nintthits, "track_nintthits[nTracks]/I");
+  T->Branch("track_ntpchits", &m_track_ntpchits, "track_ntpchits[nTracks]/I");
+  T->Branch("track_ntpothits", &m_track_ntpothits, "track_ntpothits[nTracks]/I");
+
+  // reco jets
+  T->Branch("nJets", &m_nJets, "nJets/I");
+  T->Branch("jet_pt", &m_jet_pt, "jet_pt[nJets]/F");
+  T->Branch("jet_eta", &m_jet_eta, "jet_eta[nJets]/F");
+  T->Branch("jet_phi", &m_jet_phi, "jet_phi[nJets]/F");
+  T->Branch("jet_pt_calib", &m_jet_pt_calib, "jet_pt_calib[nJets]/F");
+  T->Branch("jet_pt_emcalib", &m_jet_pt_emcalib, "jet_pt_emcalib[nJets]/F");
+  T->Branch("jet_emfrac", &m_jet_emfrac, "jet_emfrac[nJets]/F");
+
+  // truth jets
+  T->Branch("nTruthJets", &m_nTruthJets, "nTruthJets/I");
+  T->Branch("truthjet_pt", &m_truthjet_pt, "truthjet_pt[nTruthJets]/F");
+  T->Branch("truthjet_eta", &m_truthjet_eta, "truthjet_eta[nTruthJets]/F");
+  T->Branch("truthjet_phi", &m_truthjet_phi, "truthjet_phi[nTruthJets]/F");
+  T->Branch("truthjet_flavor", &m_truthjet_flavor, "truthjet_flavor[nTruthJets]/I");
+
+  if (!m_jes_calib_file.empty())
+  {
+    TFile *finjes = TFile::Open(m_jes_calib_file.c_str(), "READ");
+    if (finjes && !finjes->IsZombie())
+    {
+      TH2D *h = dynamic_cast<TH2D *>(finjes->Get(m_jes_calib_histname.c_str()));
+      if (h)
+      {
+        m_jes_calib_hist = static_cast<TH2D *>(h->Clone("m_jes_calib_hist"));
+        m_jes_calib_hist->SetDirectory(0);
+      }
+      else
+      {
+        std::cout << "calotrkana::Init(PHCompositeNode *topNode) could not find histogram "
+                  << m_jes_calib_histname << " in " << m_jes_calib_file << std::endl;
+      }
+      finjes->Close();
+      delete finjes;
+    }
+    else
+    {
+      std::cout << "calotrkana::Init(PHCompositeNode *topNode) could not open JES calib file "
+                << m_jes_calib_file << std::endl;
+    }
+  }
 
   _pdg = new TDatabasePDG();
   Fun4AllServer *se = Fun4AllServer::instance();
@@ -357,7 +430,7 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     secondary_particles.insert(truth);
   }
 //std::cout<<"calo:"<<std::endl;
- if(!m_tracking_only) {
+ if(!m_tracking_only && m_save_clusters_hits) {
   if (!m_cemcEvalStack)
   {
     m_cemcEvalStack = new CaloEvalStack(topNode, "CEMC");
@@ -682,6 +755,8 @@ int calotrkana::process_event(PHCompositeNode *topNode)
   std::set<PHG4Particle *> all_truth_particles;
   std::set<PHG4Hit *> all_track_g4hits;
   std::map<TrkrDefs::cluskey, std::shared_ptr<TrkrCluster>> alltruthclusters;
+  if (m_save_clusters_hits)
+  {
   std::cout << "calotrkana::process_event(PHCompositeNode *topNode) clustermap size: " << clustermap->size() << std::endl;
   for (auto trkid : trkrlist)
   {
@@ -808,6 +883,7 @@ int calotrkana::process_event(PHCompositeNode *topNode)
       }
     }
   }
+  }  // if (m_save_clusters_hits)
 
   // loop over all TPC seeds
   /*
@@ -921,6 +997,8 @@ int calotrkana::process_event(PHCompositeNode *topNode)
       exit(1);
     }
   }
+  if (m_save_clusters_hits)
+  {
   // loop over all truth particles and find all associated truth clusters(just in case there are truth cluster that are not associated by any reco clusters)
   // maybe unnecessary...just to be safe :)
   for (auto truth : all_truth_particles)
@@ -1026,6 +1104,7 @@ int calotrkana::process_event(PHCompositeNode *topNode)
       exit(1);
     }
   }
+  }  // if (m_save_clusters_hits)
   // extra step to get all secondaries parent history upstream to the saved particles
   std::set<PHG4Particle *> completed_particle_tree;
   all_truth_particles.insert(secondary_particles.begin(), secondary_particles.end());
@@ -1087,6 +1166,14 @@ int calotrkana::process_event(PHCompositeNode *topNode)
     }
   }
 
+  process_tracks(topNode);
+
+  process_truth_jets(topNode);
+  if (!m_tracking_only)
+  {
+    process_jets(topNode);
+  }
+
   T->Fill();
   return Fun4AllReturnCodes::EVENT_OK;
 }
@@ -1102,6 +1189,9 @@ int calotrkana::ResetEvent(PHCompositeNode *topNode)
   m_nTrackG4Hits = 0;
   m_nTPCSeeds = 0;
   m_nTPCSeedsClusters = 0;
+  m_nTracks = 0;
+  m_nJets = 0;
+  m_nTruthJets = 0;
 
   return Fun4AllReturnCodes::EVENT_OK;
 }
@@ -1118,6 +1208,8 @@ int calotrkana::End(PHCompositeNode *topNode)
   delete m_ohcalEvalStack;
   m_ohcalEvalStack = nullptr;
   m_ohcalTowerEval = nullptr;
+  delete m_jes_calib_hist;
+  m_jes_calib_hist = nullptr;
   out->cd();
 
   // T->Write();
@@ -1154,4 +1246,263 @@ std::vector<TrkrDefs::cluskey> calotrkana::get_cluster_keys(SvtxTrack *track)
     }
   }
   return out;
+}
+
+//____________________________________________________________________________..
+// full reconstructed track kinematics/quality, adapted from
+// tracks/TrackVertexTreeMaker/TrackVertexTreeMaker.cc::fillTrack
+void calotrkana::process_tracks(PHCompositeNode *topNode)
+{
+  SvtxTrackMap *trackmap = findNode::getClass<SvtxTrackMap>(topNode, "SvtxTrackMap");
+  if (!trackmap)
+  {
+    std::cout << "calotrkana::process_tracks(PHCompositeNode *topNode) No SvtxTrackMap found" << std::endl;
+    return;
+  }
+
+  for (const auto &[key, track] : *trackmap)
+  {
+    if (!track)
+    {
+      continue;
+    }
+
+    int n_mvtx = 0;
+    int n_intt = 0;
+    int n_tpc = 0;
+    int n_tpot = 0;
+    for (const auto &ckey : get_cluster_keys(track))
+    {
+      switch (TrkrDefs::getTrkrId(ckey))
+      {
+      case TrkrDefs::mvtxId:
+        n_mvtx++;
+        break;
+      case TrkrDefs::inttId:
+        n_intt++;
+        break;
+      case TrkrDefs::tpcId:
+        n_tpc++;
+        break;
+      case TrkrDefs::micromegasId:
+        n_tpot++;
+        break;
+      default:
+        break;
+      }
+    }
+
+    m_track_id[m_nTracks] = static_cast<unsigned int>(key);
+    m_track_vtxid[m_nTracks] = track->get_vertex_id();
+    m_track_charge[m_nTracks] = track->get_charge();
+    m_track_x[m_nTracks] = track->get_x();
+    m_track_y[m_nTracks] = track->get_y();
+    m_track_z[m_nTracks] = track->get_z();
+    m_track_px[m_nTracks] = track->get_px();
+    m_track_py[m_nTracks] = track->get_py();
+    m_track_pz[m_nTracks] = track->get_pz();
+    m_track_pt[m_nTracks] = track->get_pt();
+    m_track_eta[m_nTracks] = track->get_eta();
+    m_track_phi[m_nTracks] = track->get_phi();
+    m_track_chisq[m_nTracks] = track->get_chisq();
+    m_track_ndf[m_nTracks] = track->get_ndf();
+    m_track_quality[m_nTracks] = track->get_quality();
+    m_track_crossing[m_nTracks] = track->get_crossing();
+    m_track_nmvtxhits[m_nTracks] = n_mvtx;
+    m_track_nintthits[m_nTracks] = n_intt;
+    m_track_ntpchits[m_nTracks] = n_tpc;
+    m_track_ntpothits[m_nTracks] = n_tpot;
+    m_nTracks++;
+
+    if (m_nTracks >= trackmaxlength)
+    {
+      std::cout << "calotrkana::process_tracks(PHCompositeNode *topNode) m_nTracks exceeds max length" << std::endl;
+      exit(1);
+    }
+  }
+}
+
+//____________________________________________________________________________..
+// ported from JER/code/makeJER.C::GetCalibratedPt
+float calotrkana::GetCalibratedPt(float pt, float em)
+{
+  TAxis *xa = m_jes_calib_hist->GetXaxis();
+  TAxis *ya = m_jes_calib_hist->GetYaxis();
+
+  double x_lo = xa->GetBinCenter(1);
+  double x_hi = xa->GetBinCenter(xa->GetNbins());
+  double y_lo = ya->GetBinCenter(1);
+  double y_hi = ya->GetBinCenter(ya->GetNbins());
+
+  if (pt < x_lo) pt = x_lo;
+  if (pt > x_hi) pt = x_hi;
+  if (em < y_lo) em = y_lo;
+  if (em > y_hi) em = y_hi;
+
+  return m_jes_calib_hist->Interpolate(pt, em);
+}
+
+//____________________________________________________________________________..
+// reco jet kinematics + EM fraction + calibrated pt, adapted from
+// dijettreemaker/src/DijetTreeMaker.cc::process_jets (no UE/background subtraction)
+void calotrkana::process_jets(PHCompositeNode *topNode)
+{
+  std::string recoJetName = Form("AntiKt_TowerInfo_r%02d", m_jet_cone_size);
+  std::string calibJetName = Form("AntiKt_TowerInfo_r%02d_calib", m_jet_cone_size);
+
+  JetContainer *jets = findNode::getClass<JetContainer>(topNode, recoJetName);
+  if (!jets)
+  {
+    std::cout << "calotrkana::process_jets(PHCompositeNode *topNode) No reco jets found: "
+              << recoJetName << std::endl;
+    return;
+  }
+  JetContainer *jets_calib = findNode::getClass<JetContainer>(topNode, calibJetName);
+
+  TowerInfoContainer *jet_hcalin_towers = findNode::getClass<TowerInfoContainer>(topNode, "TOWERINFO_CALIB_HCALIN");
+  TowerInfoContainer *jet_hcalout_towers = findNode::getClass<TowerInfoContainer>(topNode, "TOWERINFO_CALIB_HCALOUT");
+  TowerInfoContainer *jet_emcal_towers = findNode::getClass<TowerInfoContainer>(topNode, "TOWERINFO_CALIB_CEMC_RETOWER");
+
+  int ijet = 0;
+  for (auto jet : *jets)
+  {
+    float jet_pt = jet->get_pt();
+    float jet_eta = jet->get_eta();
+    float jet_phi = jet->get_phi();
+
+    float e_total = 0;
+    float e_emcal = 0;
+    for (const auto &comp : jet->get_comp_vec())
+    {
+      unsigned int channel = comp.second;
+      TowerInfo *tower = nullptr;
+      if (comp.first == 26 || comp.first == 30)
+      {  // IHCAL
+        tower = jet_hcalin_towers ? jet_hcalin_towers->get_tower_at_channel(channel) : nullptr;
+      }
+      else if (comp.first == 27 || comp.first == 31)
+      {  // OHCAL
+        tower = jet_hcalout_towers ? jet_hcalout_towers->get_tower_at_channel(channel) : nullptr;
+      }
+      else if (comp.first == 28 || comp.first == 29)
+      {  // EMCAL
+        tower = jet_emcal_towers ? jet_emcal_towers->get_tower_at_channel(channel) : nullptr;
+      }
+      if (!tower || !tower->get_isGood())
+      {
+        continue;
+      }
+      float tower_e = tower->get_energy();
+      e_total += tower_e;
+      if (comp.first == 28 || comp.first == 29)
+      {
+        e_emcal += tower_e;
+      }
+    }
+    float emfrac = (e_total > 0) ? (e_emcal / e_total) : 0;
+
+    float pt_calib = 0;
+    if (jets_calib)
+    {
+      Jet *jet_c = jets_calib->get_jet(ijet);
+      if (jet_c)
+      {
+        pt_calib = jet_c->get_pt();
+      }
+    }
+
+    float pt_emcalib = m_jes_calib_hist ? GetCalibratedPt(jet_pt, emfrac) : -1;
+
+    m_jet_pt[m_nJets] = jet_pt;
+    m_jet_eta[m_nJets] = jet_eta;
+    m_jet_phi[m_nJets] = jet_phi;
+    m_jet_pt_calib[m_nJets] = pt_calib;
+    m_jet_pt_emcalib[m_nJets] = pt_emcalib;
+    m_jet_emfrac[m_nJets] = emfrac;
+    m_nJets++;
+    ijet++;
+
+    if (m_nJets >= jetmaxlength)
+    {
+      std::cout << "calotrkana::process_jets(PHCompositeNode *topNode) m_nJets exceeds max length" << std::endl;
+      exit(1);
+    }
+  }
+}
+
+//____________________________________________________________________________..
+// truth jet kinematics, adapted from dijettreemaker/src/DijetTreeMaker.cc::process_truth_jets
+// the hard-scatter parton flavor match is ported but left disabled (if (false)), same as upstream
+void calotrkana::process_truth_jets(PHCompositeNode *topNode)
+{
+  std::string truthJetName = Form("AntiKt_Truth_r%02d", m_jet_cone_size);
+  JetContainer *jetstruth = findNode::getClass<JetContainer>(topNode, truthJetName);
+  if (!jetstruth)
+  {
+    std::cout << "calotrkana::process_truth_jets(PHCompositeNode *topNode) No truth jets found: "
+              << truthJetName << std::endl;
+    return;
+  }
+
+  for (auto jet : *jetstruth)
+  {
+    float jet_eta = jet->get_eta();
+    float jet_phi = jet->get_phi();
+
+    int flavor = 0;
+    {
+      // match the truth jet to the highest-pt outgoing parton from the hard scatter
+      // (status 21/22/23, quarks or gluon) within the jet cone
+      PHHepMCGenEventMap *geneventmap = findNode::getClass<PHHepMCGenEventMap>(topNode, "PHHepMCGenEventMap");
+      PHHepMCGenEvent *genevt = geneventmap ? geneventmap->get(2) : nullptr;
+      HepMC::GenEvent *hepmc_event = genevt ? genevt->getEvent() : nullptr;
+      if (hepmc_event)
+      {
+        float jet_radius = m_jet_cone_size * 0.1;
+        float max_pt = 0;
+        for (HepMC::GenEvent::particle_const_iterator p = hepmc_event->particles_begin();
+             p != hepmc_event->particles_end(); ++p)
+        {
+          HepMC::GenParticle *particle = *p;
+          if (!particle) continue;
+
+          int pid = abs(particle->pdg_id());
+          int status = particle->status();
+          if (status != 23 && status != 21 && status != 22) continue;
+          if (!(pid >= 1 && pid <= 6) && pid != 21) continue;
+
+          HepMC::FourVector momentum = particle->momentum();
+          float part_pt = sqrt(momentum.px() * momentum.px() + momentum.py() * momentum.py());
+          float part_eta = momentum.eta();
+          float part_phi = momentum.phi();
+
+          if (part_pt < 3.0) continue;
+          if (part_phi > TMath::Pi()) part_phi = 2 * TMath::Pi() - part_phi;
+
+          float deta = fabs(jet_eta - part_eta);
+          float dphi = fabs(jet_phi - part_phi);
+          if (dphi > TMath::Pi()) dphi = 2 * TMath::Pi() - dphi;
+          float dr = sqrt(deta * deta + dphi * dphi);
+
+          if (dr < jet_radius && part_pt > max_pt)
+          {
+            max_pt = part_pt;
+            flavor = pid;
+          }
+        }
+      }
+    }
+
+    m_truthjet_pt[m_nTruthJets] = jet->get_pt();
+    m_truthjet_eta[m_nTruthJets] = jet_eta;
+    m_truthjet_phi[m_nTruthJets] = jet_phi;
+    m_truthjet_flavor[m_nTruthJets] = flavor;
+    m_nTruthJets++;
+
+    if (m_nTruthJets >= truthjetmaxlength)
+    {
+      std::cout << "calotrkana::process_truth_jets(PHCompositeNode *topNode) m_nTruthJets exceeds max length" << std::endl;
+      exit(1);
+    }
+  }
 }

@@ -20,6 +20,9 @@
 
 #include <string>
 
+class TH2D;
+class JetContainer;
+
 namespace HepMC
 {
   class GenEvent;
@@ -70,10 +73,27 @@ public:
   m_tracking_only = trackonly;
 }
 
+  void set_save_clusters_hits(bool save) { m_save_clusters_hits = save; }
+
+  void set_jet_cone_size(int cone_size) { m_jet_cone_size = cone_size; }
+
+  void set_jes_calib_file(const std::string &file, const std::string &histname = "h2d_jes_calib_r04")
+  {
+    m_jes_calib_file = file;
+    m_jes_calib_histname = histname;
+  }
+
 private:
   std::vector<TrkrDefs::cluskey> get_cluster_keys(SvtxTrack* track);
+  void process_jets(PHCompositeNode *topNode);
+  void process_truth_jets(PHCompositeNode *topNode);
+  void process_tracks(PHCompositeNode *topNode);
+  float GetCalibratedPt(float pt, float em);
   bool m_HI = true;
   bool m_tracking_only = false;
+  // usually false: per-cluster (reco_cluster_*/truth_cluster_*), per-calo-tower-hit
+  // (Hit_*), and per-G4Hit (track_g4hit_*) branches are large and rarely needed
+  bool m_save_clusters_hits = false;
   TTree *T = nullptr;
   const float sampletons = 50. / 3.;
   // HEPMC
@@ -184,6 +204,54 @@ private:
   int m_particle_is_embedded[ptruthmaxlength] = {0};
   int m_particle_charge[ptruthmaxlength] = {0};
   int m_nParticles = 0;
+
+  // reconstructed (fitted) tracks
+  static const int trackmaxlength = 100000;
+  int m_nTracks = 0;
+  unsigned int m_track_id[trackmaxlength] = {0};
+  unsigned int m_track_vtxid[trackmaxlength] = {0};
+  int m_track_charge[trackmaxlength] = {0};
+  float m_track_x[trackmaxlength] = {0};
+  float m_track_y[trackmaxlength] = {0};
+  float m_track_z[trackmaxlength] = {0};
+  float m_track_px[trackmaxlength] = {0};
+  float m_track_py[trackmaxlength] = {0};
+  float m_track_pz[trackmaxlength] = {0};
+  float m_track_pt[trackmaxlength] = {0};
+  float m_track_eta[trackmaxlength] = {0};
+  float m_track_phi[trackmaxlength] = {0};
+  float m_track_chisq[trackmaxlength] = {0};
+  int m_track_ndf[trackmaxlength] = {0};
+  float m_track_quality[trackmaxlength] = {0};
+  int m_track_crossing[trackmaxlength] = {0};
+  int m_track_nmvtxhits[trackmaxlength] = {0};
+  int m_track_nintthits[trackmaxlength] = {0};
+  int m_track_ntpchits[trackmaxlength] = {0};
+  int m_track_ntpothits[trackmaxlength] = {0};
+
+  // reco jets
+  static const int jetmaxlength = 1000;
+  int m_jet_cone_size{4};  // in units of 0.1, i.e. 4 -> R = 0.4
+  int m_nJets = 0;
+  float m_jet_pt[jetmaxlength] = {0};
+  float m_jet_eta[jetmaxlength] = {0};
+  float m_jet_phi[jetmaxlength] = {0};
+  float m_jet_pt_calib[jetmaxlength] = {0};
+  float m_jet_pt_emcalib[jetmaxlength] = {0};
+  float m_jet_emfrac[jetmaxlength] = {0};
+
+  // truth jets
+  static const int truthjetmaxlength = 1000;
+  int m_nTruthJets = 0;
+  float m_truthjet_pt[truthjetmaxlength] = {0};
+  float m_truthjet_eta[truthjetmaxlength] = {0};
+  float m_truthjet_phi[truthjetmaxlength] = {0};
+  int m_truthjet_flavor[truthjetmaxlength] = {0};
+
+  // JES pt calibration (EM-fraction-binned), see code/makeJER.C::GetCalibratedPt
+  std::string m_jes_calib_file{""};
+  std::string m_jes_calib_histname{"h2d_jes_calib_r04"};
+  TH2D *m_jes_calib_hist = nullptr;
 
   enum detid
   {

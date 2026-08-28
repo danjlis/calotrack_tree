@@ -17,7 +17,8 @@ AM_LDFLAGS = \
   -lmbd_io \
   -lglobalvertex \
   -lg4dst \
-  -lg4eval
+  -lg4eval \
+  -ljetbase
 
 pkginclude_HEADERS = \
   calotrkana.h
